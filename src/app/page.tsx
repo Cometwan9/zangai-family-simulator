@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, FormEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { create } from "zustand";
 
@@ -54,6 +54,7 @@ type SpaceVisitor = { name: string; visits: number; intent: string; risk: number
 type BackendStats = { totalPlayers: number; onlinePlayers: number; records: number; lastUpdated: number };
 type WechatMessage = { from: "me" | "wechat"; text: string; time: string };
 type Moment = { image: string; caption: string; time: string };
+type PhotoSticker = { id: string; label: string; glyph: string; x: number; y: number; size: number; rotate: number };
 type GameSave = Pick<GameState, "nick" | "activeNpc" | "messages" | "posts" | "qzoneMessages" | "groupLines" | "groupMembers" | "spaceVisitors" | "groupAlias" | "groupNotice" | "adminPower" | "day" | "face" | "style" | "qqDays" | "yellowDiamond" | "romance" | "familyRank" | "qCoins" | "eventLog" | "wechatMessages" | "moments" | "outfit" | "scanReady">;
 type WinampTrack = { title: string; artist: string; url?: string; audioSrc?: string };
 type DayPlan = {
@@ -115,11 +116,12 @@ const desktopIcons: { id: WindowId; label: string; file: string }[] = [
   { id: "redDiamond", label: "红钻贵族", file: "红钻贵族.png" },
   { id: "help", label: "帮助与支持", file: "帮助与支持.png" },
   { id: "storm", label: "暴风影音", file: "暴风影音.png" },
-  { id: "winamp", label: "Winamp", file: "暴风影音.png" },
+  { id: "winamp", label: "Winamp", file: "Winamp.png" },
   { id: "mobileqq", label: "手机QQ", file: "手机QQ.png" },
   { id: "friends", label: "我的好友", file: "我的好友.png" },
   { id: "farm", label: "QQ农场", file: "qq农场.png" },
   { id: "space", label: "QQ空间", file: "QQ空间.png" },
+  { id: "photo", label: "大头贴机器", file: "大头贴机器.png" },
   { id: "burn", label: "刻录光盘", file: "刻录光盘.png" },
   { id: "greenDiamond", label: "绿钻贵族", file: "绿钻贵族.png" },
   { id: "mail", label: "QQ邮箱", file: "qq邮箱.png" },
@@ -130,7 +132,7 @@ const desktopIcons: { id: WindowId; label: string; file: string }[] = [
   { id: "games", label: "游戏中心", file: "游戏中心.png" },
   { id: "netbar", label: "网上邻居", file: "网上邻居.png" },
   { id: "show", label: "QQ秀", file: "QQ秀.png" },
-  { id: "mars", label: "火星文生成器", file: "记事本.png" },
+  { id: "mars", label: "火星文生成器", file: "火星文生成器.png" },
   { id: "superVip", label: "超级会员", file: "超级会员.png" },
   { id: "vipCenter", label: "会员中心", file: "会员中心.png" },
   { id: "winrar", label: "winrar", file: "winrar.png" },
@@ -398,7 +400,43 @@ const saveKey = "zangai-game-save";
 const qshowUrl = "https://loveofqshow.online";
 const desktopIconVersion = "20260628-icons-clean";
 const toMars = (text: string) => text.split("").map((char, index) => marsMap[char] ?? (index % 5 === 0 && /[\u4e00-\u9fa5]/.test(char) ? `${char}ゞ` : char)).join("");
+const escapeSvgText = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const wrapShareLines = (text: string, width = 14) => {
+  const source = text.replace(/\s+/g, " ").trim() || "✧ 偶嗳QQ2009 ✧";
+  const lines: string[] = [];
+  for (let index = 0; index < source.length; index += width) lines.push(source.slice(index, index + width));
+  return lines.slice(0, 6);
+};
+const buildMarsShareImage = (text: string, nick: string) => {
+  const lines = wrapShareLines(text);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="720" height="960" viewBox="0 0 720 960">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#fff2fb"/>
+          <stop offset=".48" stop-color="#ff9bc8"/>
+          <stop offset="1" stop-color="#170014"/>
+        </linearGradient>
+        <filter id="pixelShadow"><feDropShadow dx="5" dy="5" stdDeviation="0" flood-color="#54002d"/></filter>
+      </defs>
+      <rect width="720" height="960" fill="url(#bg)"/>
+      <rect x="36" y="36" width="648" height="888" fill="rgba(255,255,255,.35)" stroke="#ff3f9b" stroke-width="8"/>
+      <text x="360" y="118" fill="#b60064" font-size="46" font-weight="900" text-anchor="middle" filter="url(#pixelShadow)">QQ2009 火星文</text>
+      <text x="360" y="176" fill="#fff7fc" font-size="28" font-weight="900" text-anchor="middle">来自 ${escapeSvgText(nick)} 的葬爱签名</text>
+      ${lines.map((line, index) => `<text x="360" y="${294 + index * 74}" fill="#ffeff8" stroke="#b60064" stroke-width="2" paint-order="stroke" font-size="40" font-weight="900" text-anchor="middle">${escapeSvgText(line)}</text>`).join("")}
+      <text x="360" y="790" fill="#fff" font-size="34" font-weight="900" text-anchor="middle">✧ 复制 · 发空间 · 朋友圈 ✧</text>
+      <text x="360" y="846" fill="#ffeff8" font-size="26" font-weight="900" text-anchor="middle">zangai-family-simulator.vercel.app</text>
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+};
 const getDayPlan = (day: number) => dayPlans[Math.min(dayPlans.length - 1, Math.max(0, day - 1))];
+const loopAudit = {
+  days: dayPlans.length,
+  validDays: dayPlans.filter((plan) => plan.loop.length === 5 && plan.identity && plan.mood && plan.systemHint).length,
+  identities: dayPlans.map((plan) => plan.identity),
+  moods: dayPlans.map((plan) => plan.mood),
+};
 const now = () => new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 const heatLabel = (views: number, likes: number) => views + likes > 330 ? "炸了" : views + likes > 190 ? "有人盯" : "刚发";
 const riskLabel = (risk: number) => risk > 75 ? "很可疑" : risk > 50 ? "需要观察" : "暂时安全";
@@ -1308,9 +1346,24 @@ function Desktop() {
         {desktopIcons.map((item) => <DesktopIcon key={item.label} item={item} />)}
       </div>
       <SystemBubble />
+      <MobileLoopStatus />
       {openWindow && <AppWindow id={openWindow} />}
       <Taskbar />
     </main>
+  );
+}
+
+function MobileLoopStatus() {
+  const day = useGame((state) => state.day);
+  const familyRank = useGame((state) => state.familyRank);
+  const openApp = useGame((state) => state.openApp);
+  const plan = getDayPlan(day);
+  return (
+    <aside className="mobile-loop-status">
+      <b>Day {day} · {plan.mood}</b>
+      <span>{familyRank} → {plan.identity}</span>
+      <button type="button" onClick={() => openApp("family")}>{plan.loop[2]}</button>
+    </aside>
   );
 }
 
@@ -1330,7 +1383,7 @@ function AppWindow({ id }: { id: WindowId }) {
   const qqMode = useGame((state) => state.qqMode);
   const [maximized, setMaximized] = useState(false);
   const isQqLogin = id === "qq" && qqMode === "login";
-  const isNativeArt = id === "qq" || id === "space" || id === "mail" || id === "photo";
+  const isNativeArt = id === "qq" || id === "space" || id === "mail";
   const controls: WindowControls = {
     close: closeWindow,
     minimize: closeWindow,
@@ -1397,8 +1450,10 @@ function WindowContent({ id, title, controls }: { id: WindowId; title: string; c
   if (id === "netbar") return <NetbarPanel />;
   if (id === "wechat") return <WechatPanel />;
   if (id === "ie" || id === "ieClassic") return <ArchaeologyBrowser />;
+  if (id === "docs") return <TutorialPanel />;
   if (id === "notepad") return <NotepadPanel />;
   if (id === "friends") return <FriendsPanel />;
+  if (id === "burn") return <MemoryDiscPanel />;
   return <ShortcutPanel id={id} title={title} />;
 }
 
@@ -1850,6 +1905,21 @@ function PhotoPanel() {
   const photoCanvasSize = { width: 540, height: 720 };
   const photoFrameRect = { x: 38, y: 58, width: 464, height: 560 };
   const photoViewportRect = { x: 58, y: 92, width: 424, height: 492 };
+  const filterOptions = [
+    { id: "pink", label: "粉白磨皮", css: "brightness(1.18) contrast(1.05) saturate(1.35) sepia(.12) hue-rotate(318deg)" },
+    { id: "flash", label: "网吧闪光", css: "brightness(1.32) contrast(1.16) saturate(1.18)" },
+    { id: "lomo", label: "非主流LOMO", css: "contrast(1.32) saturate(1.7) sepia(.18) hue-rotate(328deg)" },
+    { id: "soft", label: "朦胧柔焦", css: "brightness(1.12) contrast(.92) saturate(1.22) blur(.4px)" },
+    { id: "emo", label: "冷色伤感", css: "brightness(.98) contrast(1.08) saturate(.88) hue-rotate(18deg)" },
+  ];
+  const stickerPresets = [
+    { label: "粉心", glyph: "♥", rotate: -8 },
+    { label: "星光", glyph: "✦", rotate: 10 },
+    { label: "蝴蝶", glyph: "୨୧", rotate: -4 },
+    { label: "王冠", glyph: "♛", rotate: 3 },
+    { label: "闪字", glyph: "葬AI", rotate: -6 },
+    { label: "音符", glyph: "♪", rotate: 14 },
+  ];
   const nick = useGame((state) => state.nick);
   const addMoment = useGame((state) => state.addMoment);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -1858,7 +1928,15 @@ function PhotoPanel() {
   const [cameraStatus, setCameraStatus] = useState("摄像头未开启");
   const [template, setTemplate] = useState("蝴蝶结");
   const [element, setElement] = useState("爱心");
+  const [filter, setFilter] = useState(filterOptions[0].id);
+  const [stickers, setStickers] = useState<PhotoSticker[]>([
+    { id: "sticker-heart", label: "粉心", glyph: "♥", x: 78, y: 122, size: 44, rotate: -8 },
+    { id: "sticker-spark", label: "星光", glyph: "✦", x: 405, y: 150, size: 42, rotate: 10 },
+  ]);
+  const [activeStickerId, setActiveStickerId] = useState("sticker-heart");
   const [photo, setPhoto] = useState("");
+  const activeFilter = filterOptions.find((item) => item.id === filter) ?? filterOptions[0];
+  const activeSticker = stickers.find((item) => item.id === activeStickerId) ?? stickers[0];
 
   useEffect(() => {
     return () => {
@@ -1880,6 +1958,85 @@ function PhotoPanel() {
     }
   };
 
+  const addSticker = (preset: (typeof stickerPresets)[number]) => {
+    const sticker: PhotoSticker = {
+      id: `sticker-${Date.now()}-${preset.label}`,
+      label: preset.label,
+      glyph: preset.glyph,
+      x: 270,
+      y: 250,
+      size: preset.label === "闪字" ? 34 : 48,
+      rotate: preset.rotate,
+    };
+    setStickers((current) => [...current, sticker].slice(-8));
+    setActiveStickerId(sticker.id);
+  };
+  const moveSticker = (id: string, x: number, y: number) => {
+    setStickers((current) => current.map((item) => item.id === id ? { ...item, x: Math.max(34, Math.min(506, x)), y: Math.max(58, Math.min(642, y)) } : item));
+  };
+  const updateActiveSticker = (patch: Partial<PhotoSticker>) => {
+    if (!activeSticker) return;
+    setStickers((current) => current.map((item) => item.id === activeSticker.id ? { ...item, ...patch } : item));
+  };
+  const removeActiveSticker = () => {
+    setStickers((current) => {
+      const next = current.filter((item) => item.id !== activeSticker?.id);
+      setActiveStickerId(next[0]?.id ?? "");
+      return next;
+    });
+  };
+  const handleStickerPointer = (event: PointerEvent<HTMLButtonElement>, sticker: PhotoSticker) => {
+    const frame = event.currentTarget.closest(".photo-live-frame") as HTMLElement | null;
+    if (!frame) return;
+    const rect = frame.getBoundingClientRect();
+    const setFromEvent = (clientX: number, clientY: number) => {
+      moveSticker(sticker.id, ((clientX - rect.left) / rect.width) * photoCanvasSize.width, ((clientY - rect.top) / rect.height) * photoCanvasSize.height);
+    };
+    setActiveStickerId(sticker.id);
+    setFromEvent(event.clientX, event.clientY);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const drawTemplate = (ctx: CanvasRenderingContext2D) => {
+    ctx.lineWidth = 18;
+    ctx.strokeStyle = template === "格子" ? "#ff9bcc" : template === "翅膀" ? "#ff74b8" : "#f04a9a";
+    ctx.strokeRect(photoFrameRect.x, photoFrameRect.y, photoFrameRect.width, photoFrameRect.height);
+    if (template === "格子") {
+      ctx.fillStyle = "rgba(255, 155, 204, .22)";
+      for (let x = photoFrameRect.x; x < photoFrameRect.x + photoFrameRect.width; x += 34) ctx.fillRect(x, photoFrameRect.y, 17, photoFrameRect.height);
+      for (let y = photoFrameRect.y; y < photoFrameRect.y + photoFrameRect.height; y += 34) ctx.fillRect(photoFrameRect.x, y, photoFrameRect.width, 17);
+    }
+    if (template === "翅膀") {
+      ctx.fillStyle = "#ff74b8";
+      ctx.font = "900 56px serif";
+      ctx.textAlign = "center";
+      ctx.fillText("♡", 270, 84);
+      ctx.font = "900 42px serif";
+      ctx.fillText("︵", 204, 93);
+      ctx.fillText("︶", 336, 93);
+    }
+    if (template === "蝴蝶结") {
+      ctx.fillStyle = "#f04a9a";
+      ctx.font = "900 54px serif";
+      ctx.textAlign = "left";
+      ctx.fillText("୨୧", 45, 84);
+    }
+  };
+  const drawStickers = (ctx: CanvasRenderingContext2D) => {
+    stickers.forEach((sticker) => {
+      ctx.save();
+      ctx.translate(sticker.x, sticker.y);
+      ctx.rotate((sticker.rotate * Math.PI) / 180);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = Math.max(2, sticker.size / 12);
+      ctx.font = `900 ${sticker.size}px serif`;
+      ctx.strokeStyle = "#fff7fc";
+      ctx.fillStyle = sticker.glyph === "葬AI" ? "#ff3f9b" : "#f04a9a";
+      ctx.strokeText(sticker.glyph, 0, 0);
+      ctx.fillText(sticker.glyph, 0, 0);
+      ctx.restore();
+    });
+  };
   const generate = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1890,6 +2047,7 @@ function PhotoPanel() {
     const video = videoRef.current;
     ctx.fillStyle = "#fff4fb";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.filter = activeFilter.css.replace("blur(.4px)", "blur(1px)");
     if (video?.srcObject && video.videoWidth) {
       const viewportRatio = photoViewportRect.width / photoViewportRect.height;
       const videoRatio = video.videoWidth / video.videoHeight;
@@ -1911,9 +2069,11 @@ function PhotoPanel() {
       ctx.textAlign = "center";
       ctx.fillText(nick.slice(0, 2), photoViewportRect.x + photoViewportRect.width / 2, photoViewportRect.y + photoViewportRect.height / 2);
     }
-    ctx.lineWidth = 18;
-    ctx.strokeStyle = template === "格子" ? "#ff9bcc" : template === "翅膀" ? "#ff74b8" : "#f04a9a";
-    ctx.strokeRect(photoFrameRect.x, photoFrameRect.y, photoFrameRect.width, photoFrameRect.height);
+    ctx.filter = "none";
+    ctx.fillStyle = "rgba(255, 116, 184, .08)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawTemplate(ctx);
+    drawStickers(ctx);
     ctx.fillStyle = "#f04a9a";
     ctx.font = "900 34px serif";
     ctx.textAlign = "left";
@@ -1921,12 +2081,22 @@ function PhotoPanel() {
     ctx.textAlign = "right";
     ctx.fillText(element === "星星" ? "★ ★ ★" : element === "音符" ? "♪ ♫ ♪" : "♡ ♡ ♡", 482, 665);
     setPhoto(canvas.toDataURL("image/png"));
+    setCameraStatus(`已生成：${activeFilter.label} + ${template} + ${stickers.length} 个贴纸`);
   };
 
   const publish = () => {
     if (!photo) generate();
     const image = photo || canvasRef.current?.toDataURL("image/png") || "";
     if (image) addMoment({ image, caption: `${nick} 的 QQ2009 大头贴：${template} + ${element}`, time: now() });
+  };
+  const downloadPhoto = () => {
+    if (!photo) generate();
+    const image = photo || canvasRef.current?.toDataURL("image/png") || "";
+    if (!image) return;
+    const link = document.createElement("a");
+    link.href = image;
+    link.download = `qq2009-datatou-${Date.now()}.png`;
+    link.click();
   };
 
   return (
@@ -1937,16 +2107,47 @@ function PhotoPanel() {
       <section className="photo-camera">
         <h2>大头贴机器</h2>
         <p>{cameraStatus}</p>
-        <div className="photo-live-frame" data-template={template}>
+        <div className="photo-live-frame" data-template={template} style={{ "--photo-filter": activeFilter.css } as CSSProperties}>
           <video ref={videoRef} playsInline muted />
+          {stickers.map((sticker) => (
+            <button
+              key={sticker.id}
+              type="button"
+              className={`photo-live-sticker ${activeStickerId === sticker.id ? "active" : ""}`}
+              style={{ left: `${(sticker.x / photoCanvasSize.width) * 100}%`, top: `${(sticker.y / photoCanvasSize.height) * 100}%`, fontSize: `${sticker.size / 2}px`, transform: `translate(-50%, -50%) rotate(${sticker.rotate}deg)` }}
+              onPointerDown={(event) => handleStickerPointer(event, sticker)}
+              onPointerMove={(event) => {
+                if (event.buttons !== 1) return;
+                const frame = event.currentTarget.closest(".photo-live-frame") as HTMLElement | null;
+                if (!frame) return;
+                const rect = frame.getBoundingClientRect();
+                moveSticker(sticker.id, ((event.clientX - rect.left) / rect.width) * photoCanvasSize.width, ((event.clientY - rect.top) / rect.height) * photoCanvasSize.height);
+              }}
+            >
+              {sticker.glyph}
+            </button>
+          ))}
           <span className="photo-live-label">QQ2009</span>
           <span className="photo-live-deco">{element === "星星" ? "★ ★ ★" : element === "音符" ? "♪ ♫ ♪" : "♡ ♡ ♡"}</span>
         </div>
         <div className="photo-controls">
           <button onClick={startCamera}>开启摄像头</button>
           <label>模板<select value={template} onChange={(event) => setTemplate(event.target.value)}><option>蝴蝶结</option><option>格子</option><option>翅膀</option></select></label>
+          <label>滤镜<select value={filter} onChange={(event) => setFilter(event.target.value)}>{filterOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
           <label>元素<select value={element} onChange={(event) => setElement(event.target.value)}><option>爱心</option><option>星星</option><option>音符</option></select></label>
+          <div className="photo-sticker-palette">
+            {stickerPresets.map((preset) => <button key={preset.label} type="button" onClick={() => addSticker(preset)}>{preset.glyph}</button>)}
+          </div>
+          {activeSticker && (
+            <div className="photo-sticker-tuner">
+              <b>{activeSticker.label}</b>
+              <label>大小<input type="range" min="24" max="82" value={activeSticker.size} onChange={(event) => updateActiveSticker({ size: Number(event.target.value) })} /></label>
+              <label>旋转<input type="range" min="-30" max="30" value={activeSticker.rotate} onChange={(event) => updateActiveSticker({ rotate: Number(event.target.value) })} /></label>
+              <button type="button" onClick={removeActiveSticker}>删除贴纸</button>
+            </div>
+          )}
           <button onClick={generate}>生成照片</button>
+          <button onClick={downloadPhoto}>保存图片</button>
           <button onClick={publish}>发朋友圈</button>
         </div>
         <canvas ref={canvasRef} />
@@ -2127,12 +2328,58 @@ function WinampPanel() {
 }
 
 function MarsPanel() {
+  const nick = useGame((state) => state.nick);
   const addPost = useGame((state) => state.addPost);
+  const addMoment = useGame((state) => state.addMoment);
+  const addEvent = useGame((state) => state.addEvent);
+  const openApp = useGame((state) => state.openApp);
   const [text, setText] = useState("我爱QQ2009");
   const [result, setResult] = useState("✧ 偶嗳QQ2009 ✧\no(≧v≦)o ♡゜");
+  const [shareStatus, setShareStatus] = useState("生成后可以复制、发空间、发朋友圈或分享链接。");
+  useEffect(() => {
+    const shared = new URLSearchParams(window.location.search).get("mars");
+    if (!shared) return;
+    const decoded = shared.slice(0, 240);
+    setText(decoded);
+    setResult(decorate(decoded));
+    setShareStatus("已读取分享链接里的火星文。");
+  }, []);
   const decorate = (value: string) => {
     const source = value.trim() || "我爱QQ2009";
     return `✧ ${toMars(source)} ✧\no(≧v≦)o ♡゜`;
+  };
+  const shareUrl = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("mars", result.replace(/\s+/g, " ").slice(0, 180));
+    return url.toString();
+  };
+  const copyText = async (value: string, message: string) => {
+    await navigator.clipboard?.writeText(value);
+    setShareStatus(message);
+    addEvent(message);
+  };
+  const shareNative = async () => {
+    const payload = {
+      title: "QQ2009 火星文生成器",
+      text: result,
+      url: shareUrl(),
+    };
+    if (navigator.share) {
+      await navigator.share(payload).catch(() => undefined);
+      setShareStatus("已打开系统分享面板。");
+      return;
+    }
+    await copyText(`${payload.text}\n${payload.url}`, "当前浏览器不支持系统分享，已复制分享文案。");
+  };
+  const shareToSpace = () => {
+    addPost(result);
+    openApp("space");
+    setShareStatus("已发布到 QQ空间说说。");
+  };
+  const shareCardToMoment = () => {
+    addMoment({ image: buildMarsShareImage(result, nick), caption: `${nick} 的火星文签名`, time: now() });
+    setShareStatus("已生成火星文分享卡片并发朋友圈。");
+    addEvent("火星文生成器：分享卡片已发布");
   };
   const insert = (token: string) => {
     setText((current) => `${current}${token}`);
@@ -2153,14 +2400,22 @@ function MarsPanel() {
         <label>输入文字：</label>
         <textarea value={text} maxLength={100} onChange={(event) => setText(event.target.value)} />
         <span>已输入：{text.length}/100</span>
-        <button className="mars-primary" onClick={() => setResult(decorate(text))}>★ 一键转换</button>
+        <button className="mars-primary" onClick={() => { setResult(decorate(text)); setShareStatus("已生成可分享火星文。"); }}>★ 一键转换</button>
       </section>
       <section className="mars-editor">
         <label>转换结果：</label>
         <textarea value={result} onChange={(event) => setResult(event.target.value)} />
+        <div className="mars-share-preview">
+          <b>分享预览</b>
+          <p>{result}</p>
+          <small>{shareStatus}</small>
+        </div>
         <div className="mars-actions">
-          <button onClick={() => navigator.clipboard?.writeText(result)}>复制</button>
-          <button onClick={() => addPost(result)}>分享</button>
+          <button onClick={() => copyText(result, "已复制火星文。")}>复制文案</button>
+          <button onClick={() => copyText(shareUrl(), "已复制可分享链接。")}>复制链接</button>
+          <button onClick={shareNative}>系统分享</button>
+          <button onClick={shareToSpace}>发QQ空间</button>
+          <button onClick={shareCardToMoment}>发朋友圈卡片</button>
           <button onClick={() => { setText(""); setResult(""); }}>清空</button>
         </div>
       </section>
@@ -2431,6 +2686,83 @@ function NotepadPanel() {
   );
 }
 
+function TutorialPanel() {
+  const openApp = useGame((state) => state.openApp);
+  return (
+    <div className="tutorial-panel zai-panel">
+      <header className="zai-panel-hero">
+        <i className="zai-glyph note" />
+        <div>
+          <h2>我的文档 · 新手教程</h2>
+          <p>这不是点选项的 PPT，是一个伪 QQ 生态操作模拟。</p>
+        </div>
+      </header>
+      <section className="tutorial-loop">
+        <h3>每天只有五步</h3>
+        <ol>
+          <li>QQ上线：看谁找你，谁在群里带节奏。</li>
+          <li>浏览今天发生什么：公告、访客、留言、私聊都算线索。</li>
+          <li>回复聊天：自己打字，安慰、拱火、拉票都会改变关系。</li>
+          <li>处理事件：改马甲、发说说、回踩、禁言、踢人。</li>
+          <li>睡觉：进入下一天，身份和矛盾都会升级。</li>
+        </ol>
+      </section>
+      <section className="tutorial-grid">
+        {[
+          ["腾讯QQ", "主线入口。聊天、好友、群聊和身份变化都从这里发生。", "qq"],
+          ["QQ空间", "经营排面。发说说、看访客、留言、回踩，用内容钓关系。", "space"],
+          ["大头贴机器", "传播入口。拍照、滤镜、贴纸，生成美图秀秀式非主流照片。", "photo"],
+          ["火星文生成器", "语言入口。把普通话变成签名、说说、群公告里的身份暗号。", "mars"],
+          ["QQ秀/红钻", "形象入口。换装影响排面，也会影响别人对你的第一印象。", "show"],
+          ["刻录光盘", "回忆入口。保存旧照片、旧聊天和七天之后还想留下的东西。", "burn"],
+        ].map(([name, desc, target]) => (
+          <button key={name} type="button" onClick={() => openApp(target as WindowId)}>
+            <b>{name}</b>
+            <span>{desc}</span>
+          </button>
+        ))}
+      </section>
+      <section className="identity-ladder">
+        <h3>身份会这样变</h3>
+        <p>游客 → 新人 → 正式成员 → 活跃成员 → 核心成员 → 候选组长 → 真正组长</p>
+      </section>
+      <section className="identity-ladder">
+        <h3>七天 loop 自检查</h3>
+        <p>{loopAudit.validDays}/{loopAudit.days} 天已配置“上线 → 浏览 → 回复 → 处理 → 睡觉”，情绪线：{loopAudit.moods.join(" → ")}。</p>
+        <p>身份线：{loopAudit.identities.join(" → ")}。</p>
+      </section>
+    </div>
+  );
+}
+
+function MemoryDiscPanel() {
+  const openApp = useGame((state) => state.openApp);
+  const addEvent = useGame((state) => state.addEvent);
+  const day = useGame((state) => state.day);
+  const familyRank = useGame((state) => state.familyRank);
+  return (
+    <div className="memory-disc-panel zai-panel">
+      <div className="memory-disc-art">
+        <Image src="/ui/memory-disc.png" alt="回忆光盘" fill sizes="min(920px, 100vw)" />
+      </div>
+      <section className="memory-disc-copy">
+        <h2>回忆光盘</h2>
+        <p>光盘里不是工具，是你在 2009 留下来的证据：第一张大头贴、第一条说说、第一次被看见。</p>
+        <div>
+          <b>当前存档</b>
+          <span>Day {day} · {familyRank}</span>
+        </div>
+        <menu>
+          <button type="button" onClick={() => openApp("photo")}>刻入大头贴</button>
+          <button type="button" onClick={() => openApp("space")}>刻入空间留言</button>
+          <button type="button" onClick={() => openApp("family")}>刻入家族内战</button>
+          <button type="button" onClick={() => addEvent("回忆光盘：已保存今天的青春碎片")}>保存回忆</button>
+        </menu>
+      </section>
+    </div>
+  );
+}
+
 function ShortcutPanel({ id, title }: { id: WindowId; title: string }) {
   const openApp = useGame((state) => state.openApp);
   const addEvent = useGame((state) => state.addEvent);
@@ -2453,9 +2785,9 @@ function ShortcutPanel({ id, title }: { id: WindowId; title: string }) {
       <section className="shortcut-visual">
         <div className={`shortcut-pixel ${id}`}><i /><b>{title}</b><span>2009.exe</span></div>
         <ul>
-          <li>像素 UI 已统一</li>
-          <li>点击会写入游戏日志</li>
-          <li>可跳转到相关玩法模块</li>
+          <li>关联：{desktopIcons.find((item) => item.id === target)?.label ?? "腾讯QQ"}</li>
+          <li>记录：{actions[0]?.[1] ?? `${title} 已打开`}</li>
+          <li>影响：会改变今天的空间、群聊或回忆线索</li>
         </ul>
       </section>
       <section className="zai-action-grid">
@@ -2480,7 +2812,7 @@ const shortcutTarget: Partial<Record<WindowId, WindowId>> = {
   help: "ie",
   storm: "space",
   mobileqq: "qq",
-  burn: "photo",
+  burn: "burn",
   redDiamond: "show",
   greenDiamond: "space",
   yellowDiamond: "space",
@@ -2505,7 +2837,7 @@ const shortcutCopy: Partial<Record<WindowId, string>> = {
   help: "帮助入口。查看系统风险和玩法提示。",
   storm: "影音入口。把伤感音乐写入空间氛围。",
   mobileqq: "手机 QQ。用于移动端登录和取回密码叙事。",
-  burn: "刻录入口。把大头贴照片保存成传播素材。",
+  burn: "回忆入口。光盘里存的是大头贴、旧留言、旧聊天和七天后的青春证据。",
   redDiamond: "红钻入口。连接 QQ秀换装和红钻排面。",
   greenDiamond: "绿钻入口。连接空间音乐和背景音乐排面。",
   yellowDiamond: "黄钻入口。连接 QQ空间装扮和刷评论经济。",
@@ -2513,11 +2845,14 @@ const shortcutCopy: Partial<Record<WindowId, string>> = {
   vipCenter: "会员中心。查看红钻、黄钻、绿钻相关入口。",
   winrar: "压缩包。把家族资料打包成内战证据。",
   pcManager: "电脑管家。连接网吧风险、断线和扫描事件。",
+  ieClassic: "旧版 Internet。打开 2009 互联网考古入口。",
 };
 
 const shortcutActions: Partial<Record<WindowId, [string, string][]>> = {
   computer: [["扫描硬盘", "我的电脑：发现 QQ聊天记录缓存"], ["查看用户", "我的电脑：Administrator 正在加载个人设置"]],
+  docs: [["打开日志", "我的文档：开发日志已打开"], ["保存说说", "我的文档：伤感说说已保存"]],
   trash: [["恢复头像", "回收站：恢复一张非主流头像"], ["清空风险", "回收站：系统风险提示暂时消失"]],
+  ieClassic: [["打开考古", "Internet：正在搜索 Windows XP 与 QQ2009 资料"], ["收藏网页", "Internet：QQ空间资料已加入收藏夹"]],
   music: [["设为空间BGM", "QQ音乐：空间背景音乐已更换"], ["循环播放", "QQ音乐：伤感曲目循环中"]],
   farm: [["偷菜记录", "QQ农场：访客记录 +1"], ["浇水回踩", "QQ农场：回踩关系升温"]],
   ranch: [["喂牧场", "QQ牧场：好友访问记录增加"], ["偷看牧场", "QQ牧场：疑似小号出现"]],
@@ -2525,7 +2860,7 @@ const shortcutActions: Partial<Record<WindowId, [string, string][]>> = {
   help: [["查看帮助", "帮助：玩法提示已打开"], ["系统修复", "帮助：系统提示你先登录 QQ"]],
   storm: [["播放 MV", "暴风影音：伤感 MV 已播放"], ["截图发空间", "暴风影音：截图准备发到空间"]],
   mobileqq: [["手机验证", "手机QQ：验证码流程已准备"], ["同步在线", "手机QQ：移动端在线状态同步"]],
-  burn: [["刻录大头贴", "刻录光盘：大头贴已写入光盘"], ["备份相册", "刻录光盘：空间相册已备份"]],
+  burn: [["保存回忆", "回忆光盘：已保存今天的青春碎片"], ["翻旧照片", "回忆光盘：翻到一张旧大头贴"]],
   greenDiamond: [["开通绿钻", "绿钻：空间音乐排面提升"], ["试听歌曲", "绿钻：试听 Linkin Park"]],
   yellowDiamond: [["续费黄钻", "黄钻：空间装扮排面提升"], ["刷访客", "黄钻：访客互动预热"]],
   superVip: [["点亮身份", "超级会员：身份图标闪烁"], ["同步 QQ秀", "超级会员：QQ秀侧栏更新"]],
